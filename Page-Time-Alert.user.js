@@ -6,6 +6,7 @@
 // @author       你
 // @match        *://www.youtube.com/*
 // @match        *://www.bilibili.com/*
+// @match        *://www.douyu.com/*
 // @grant        none
 // ==/UserScript==
 
@@ -13,7 +14,14 @@
     'use strict';
 
     localStorage.setItem('timeTrackerDoNotShowAgain', 'false');
-    const TIME_LIMIT = 10*60; // 设置超时时间（秒）
+
+    // 根据当前网站设置不同的 TIME_LIMIT
+    let TIME_LIMIT;
+    if (window.location.hostname === 'www.douyu.com') {
+        TIME_LIMIT = 0; // 斗鱼网站不设时间限制
+    } else {
+        TIME_LIMIT = 5 * 60; // 其他网站设置为5分钟
+    }
     const ALERT_TIMEOUT = 10000; // 提示框显示时间（毫秒）
 
     let secondsSpent = 0;
