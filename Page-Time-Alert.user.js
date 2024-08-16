@@ -20,7 +20,7 @@
         showDoNotShowAgainButton: false
     };
 
-    const TIME_LIMIT = 5 * 60; // 5分钟
+    const TIME_LIMIT = 0;5 * 60; // 5分钟
     const ALERT_TIMEOUT = 10000; // 10秒
     const UPDATE_INTERVAL = 30000; // 30秒
 
@@ -188,6 +188,7 @@
     }
 
     function closePage() {
+       window.location.href = 'about:blank';
         updateUsageTime();
         window.close();
     }
