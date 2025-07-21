@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         YouTube视频下载助手 (优化版)
+// @name         YouTube视频下载助手 (完全优化版)
 // @namespace    http://tampermonkey.net/
-// @version      2.0
-// @description  在YouTube视频页面、首页和订阅页添加下载按钮 (兼容Trusted Types)
+// @version      3.5
+// @description  在YouTube视频页面、首页、订阅页、播放列表和短视频添加下载按钮
 // @author       You
 // @match        https://www.youtube.com/*
 // @connect      localhost
@@ -30,76 +30,7 @@
         console.log('Trusted Types 策略创建失败，使用备用方案');
     }
 
-    // 安全的 innerHTML 设置
-    function safeSetInnerHTML(element, html) {
-        try {
-            if (trustedPolicy) {
-                element.innerHTML = trustedPolicy.createHTML(html);
-            } else {
-                element.innerHTML = html;
-            }
-        } catch (e) {
-            // 如果 innerHTML 失败，使用 DOM 方法
-            const temp = document.createElement('div');
-            temp.innerHTML = html;
-            element.replaceChildren(...temp.childNodes);
-        }
-    }
-
-    // 安全的按钮创建函数（使用 DOM 方法而不是 innerHTML）
-    function createDownloadButton(icon, title, bgColor, clickHandler) {
-        const btn = document.createElement('button');
-        btn.textContent = icon; // 使用 textContent 而不是 innerHTML
-        btn.title = title;
-        btn.type = 'button';
-
-        // 设置样式
-        const styles = {
-            background: `${bgColor} !important`,
-            color: 'white !important',
-            border: 'none !important',
-            padding: '6px 8px !important',
-            borderRadius: '4px !important',
-            cursor: 'pointer !important',
-            fontSize: '14px !important',
-            fontWeight: 'bold !important',
-            minWidth: '28px !important',
-            height: '28px !important',
-            display: 'flex !important',
-            alignItems: 'center !important',
-            justifyContent: 'center !important',
-            pointerEvents: 'auto !important',
-            position: 'relative !important',
-            zIndex: '9999 !important',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.3) !important',
-            transition: 'opacity 0.2s !important',
-            opacity: '0.95'
-        };
-
-        Object.keys(styles).forEach(key => {
-            btn.style[key] = styles[key];
-        });
-
-        // 事件处理
-        btn.addEventListener('click', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            clickHandler();
-        }, true);
-
-        btn.addEventListener('mouseenter', function() {
-            this.style.opacity = '1';
-        });
-
-        btn.addEventListener('mouseleave', function() {
-            this.style.opacity = '0.95';
-        });
-
-        return btn;
-    }
-
-    // 创建样式表（避免内联样式）
+    // 创建样式表
     function injectStyles() {
         if (document.getElementById('yt-downloader-styles')) return;
 
@@ -110,7 +41,7 @@
                 position: absolute !important;
                 top: 8px !important;
                 left: 8px !important;
-                z-index: 9999 !important;
+                z-index: 99999 !important;
                 display: flex !important;
                 gap: 4px !important;
                 pointer-events: auto !important;
@@ -132,7 +63,7 @@
                 justify-content: center !important;
                 pointer-events: auto !important;
                 position: relative !important;
-                z-index: 9999 !important;
+                z-index: 99999 !important;
                 box-shadow: 0 2px 4px rgba(0,0,0,0.3) !important;
                 transition: opacity 0.2s !important;
                 opacity: 0.95;
@@ -150,7 +81,7 @@
                 position: absolute !important;
                 top: 15px !important;
                 left: 15px !important;
-                z-index: 9999 !important;
+                z-index: 99999 !important;
                 display: flex !important;
                 gap: 8px !important;
                 pointer-events: auto !important;
@@ -166,57 +97,338 @@
                 font-size: 13px !important;
                 font-weight: bold !important;
                 pointer-events: auto !important;
-                z-index: 9999 !important;
+                z-index: 99999 !important;
                 box-shadow: 0 2px 6px rgba(0,0,0,0.3) !important;
             }
 
             .yt-player-audio-btn {
                 background: rgba(255, 102, 153, 0.95) !important;
             }
+
+            /* 短视频按钮样式 - 进一步上移避免遮挡 */
+            .yt-shorts-btns {
+                position: absolute !important;
+                top: -18px !important;
+                left: -8px !important;
+                z-index: 999999 !important;
+                display: flex !important;
+                flex-direction: row !important;
+                gap: 4px !important;
+                pointer-events: auto !important;
+                background: rgba(255, 255, 255, 0.98) !important;
+                border-radius: 8px !important;
+                padding: 4px !important;
+                box-shadow: 0 4px 16px rgba(0,0,0,0.4) !important;
+                border: 2px solid rgba(0,0,0,0.15) !important;
+                backdrop-filter: blur(4px) !important;
+            }
+
+            .yt-shorts-btn {
+                background: rgba(0, 0, 0, 0.9) !important;
+                color: white !important;
+                border: 1px solid rgba(255, 255, 255, 0.3) !important;
+                padding: 4px 6px !important;
+                border-radius: 4px !important;
+                cursor: pointer !important;
+                font-size: 11px !important;
+                font-weight: bold !important;
+                min-width: 24px !important;
+                height: 24px !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                pointer-events: auto !important;
+                position: relative !important;
+                z-index: 999999 !important;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.6) !important;
+                transition: all 0.2s ease !important;
+                opacity: 1 !important;
+                font-family: Arial, sans-serif !important;
+            }
+
+            .yt-shorts-btn:hover {
+                opacity: 1 !important;
+                transform: scale(1.15) !important;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.8) !important;
+            }
+
+            .yt-shorts-audio-btn {
+                background: rgba(255, 102, 153, 0.9) !important;
+            }
+
+            .yt-shorts-video-btn {
+                background: rgba(255, 0, 0, 0.9) !important;
+            }
+
+            /* 短视频播放器按钮样式 - 调整到左上角 */
+            .yt-shorts-player-btns {
+                position: fixed !important;
+                top: 15px !important;
+                left: 15px !important;
+                z-index: 999999 !important;
+                display: flex !important;
+                flex-direction: row !important;
+                gap: 8px !important;
+                pointer-events: auto !important;
+                background: rgba(255, 255, 255, 0.98) !important;
+                border-radius: 8px !important;
+                padding: 6px !important;
+                box-shadow: 0 6px 20px rgba(0,0,0,0.4) !important;
+                border: 2px solid rgba(0,0,0,0.15) !important;
+                backdrop-filter: blur(4px) !important;
+            }
+
+            .yt-shorts-player-btn {
+                background: rgba(0, 0, 0, 0.85) !important;
+                color: white !important;
+                border: 1px solid rgba(255, 255, 255, 0.3) !important;
+                padding: 6px 10px !important;
+                border-radius: 6px !important;
+                cursor: pointer !important;
+                font-size: 12px !important;
+                font-weight: bold !important;
+                min-width: 60px !important;
+                height: 32px !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                pointer-events: auto !important;
+                position: relative !important;
+                z-index: 999999 !important;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.5) !important;
+                transition: all 0.2s ease !important;
+                opacity: 0.95 !important;
+                font-family: Arial, sans-serif !important;
+            }
+
+            .yt-shorts-player-btn:hover {
+                opacity: 1 !important;
+                transform: scale(1.05) !important;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.7) !important;
+            }
+
+            .yt-shorts-player-audio-btn {
+                background: rgba(255, 102, 153, 0.85) !important;
+            }
+
+            .yt-shorts-player-video-btn {
+                background: rgba(255, 0, 0, 0.85) !important;
+            }
+
+            /* 播放列表按钮样式 */
+            .yt-playlist-btns {
+                position: absolute !important;
+                top: 8px !important;
+                left: 8px !important;
+                z-index: 99999 !important;
+                display: flex !important;
+                gap: 4px !important;
+                pointer-events: auto !important;
+            }
+
+            .yt-playlist-btn {
+                background: rgba(255, 0, 0, 0.95) !important;
+                color: white !important;
+                border: none !important;
+                padding: 6px 8px !important;
+                border-radius: 4px !important;
+                cursor: pointer !important;
+                font-size: 12px !important;
+                font-weight: bold !important;
+                min-width: 26px !important;
+                height: 26px !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                pointer-events: auto !important;
+                position: relative !important;
+                z-index: 99999 !important;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.3) !important;
+                transition: opacity 0.2s !important;
+                opacity: 0.9;
+            }
+
+            .yt-playlist-btn:hover {
+                opacity: 1 !important;
+            }
+
+            .yt-playlist-audio-btn {
+                background: rgba(255, 102, 153, 0.95) !important;
+            }
+
+            /* 响应式调整 - 移动端优化 */
+            @media screen and (max-width: 768px) {
+                .yt-shorts-btns {
+                    top: -15px !important;
+                    left: -6px !important;
+                    gap: 3px !important;
+                    padding: 3px !important;
+                }
+
+                .yt-shorts-btn {
+                    min-width: 22px !important;
+                    height: 22px !important;
+                    font-size: 10px !important;
+                    padding: 3px 5px !important;
+                }
+
+                .yt-shorts-player-btns {
+                    top: 12px !important;
+                    left: 12px !important;
+                    gap: 6px !important;
+                    padding: 4px !important;
+                }
+
+                .yt-shorts-player-btn {
+                    min-width: 50px !important;
+                    height: 28px !important;
+                    font-size: 10px !important;
+                    padding: 4px 8px !important;
+                }
+            }
+
+            /* 超小屏幕优化 */
+            @media screen and (max-width: 480px) {
+                .yt-shorts-btns {
+                    top: -12px !important;
+                    left: -4px !important;
+                }
+
+                .yt-shorts-btn {
+                    min-width: 20px !important;
+                    height: 20px !important;
+                    font-size: 9px !important;
+                }
+
+                .yt-shorts-player-btns {
+                    position: fixed !important;
+                    top: 8px !important;
+                    left: 8px !important;
+                }
+            }
+
+            /* 增强按钮可见性和避免被遮挡 */
+            .yt-shorts-btns,
+            .yt-shorts-player-btns {
+                opacity: 1 !important;
+                visibility: visible !important;
+                display: flex !important;
+                pointer-events: auto !important;
+                transform: translateZ(0) !important;
+            }
+
+            /* 确保按钮容器不被遮挡 */
+            .yt-shorts-btns * {
+                pointer-events: auto !important;
+                z-index: 999999 !important;
+                opacity: 1 !important;
+                visibility: visible !important;
+            }
+
+            .yt-shorts-player-btns * {
+                pointer-events: auto !important;
+                z-index: 999999 !important;
+                opacity: 1 !important;
+                visibility: visible !important;
+            }
+
+            /* 特殊情况处理 - 确保在所有短视频容器中都能显示 */
+            ytd-rich-item-renderer .yt-shorts-btns,
+            ytm-shorts-lockup-view-model .yt-shorts-btns,
+            .shortsLockupViewModelHost .yt-shorts-btns {
+                display: flex !important;
+                opacity: 1 !important;
+                visibility: visible !important;
+                position: absolute !important;
+                z-index: 999999 !important;
+                transform: translateZ(0) !important;
+            }
+
+            /* 悬停时强制保持按钮可见 */
+            ytd-rich-item-renderer:hover .yt-shorts-btns,
+            ytm-shorts-lockup-view-model:hover .yt-shorts-btns,
+            .shortsLockupViewModelHost:hover .yt-shorts-btns {
+                display: flex !important;
+                opacity: 1 !important;
+                visibility: visible !important;
+                z-index: 999999 !important;
+                transform: translateZ(0) !important;
+                pointer-events: auto !important;
+            }
+
+            /* 覆盖任何可能隐藏按钮的样式 */
+            .yt-shorts-btns:hover,
+            .yt-shorts-btns:focus,
+            .yt-shorts-btns:active {
+                display: flex !important;
+                opacity: 1 !important;
+                visibility: visible !important;
+            }
         `;
 
         document.head.appendChild(style);
     }
 
-    // 为首页视频卡片添加下载按钮
+    // 提取视频ID和构建URL
+    function extractVideoUrl(element) {
+        // 获取视频链接
+        const linkElement = element.querySelector('a[href*="/watch?v="]') ||
+                           element.querySelector('a[href*="/shorts/"]') ||
+                           element.querySelector('a#video-title-link') ||
+                           element.querySelector('#video-title') ||
+                           element.querySelector('h3 a') ||
+                           element.querySelector('a#thumbnail') ||
+                           element.querySelector('.shortsLockupViewModelHostEndpoint');
+
+        if (!linkElement) return null;
+
+        let videoUrl = linkElement.href;
+        if (!videoUrl) {
+            const href = linkElement.getAttribute('href');
+            if (href && (href.includes('/watch?v=') || href.includes('/shorts/'))) {
+                videoUrl = 'https://www.youtube.com' + href;
+            }
+        }
+
+        // 如果是shorts URL，转换为watch URL
+        if (videoUrl && videoUrl.includes('/shorts/')) {
+            const videoId = videoUrl.split('/shorts/')[1].split('?')[0];
+            videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+        }
+
+        return videoUrl && (videoUrl.includes('/watch?v=') || videoUrl.includes('/shorts/')) ? videoUrl : null;
+    }
+
+    // 创建下载按钮
+    function createDownloadButton(type, icon, title, bgClass = '') {
+        const btn = document.createElement('button');
+        btn.textContent = icon;
+        btn.title = title;
+        btn.type = 'button';
+        btn.className = `${type} ${bgClass}`;
+
+        return btn;
+    }
+
+    // 为普通视频卡片添加下载按钮
     function addButtonsToVideoCards() {
         const videoCards = document.querySelectorAll(`
             ytd-video-renderer:not([data-download-added]),
             ytd-compact-video-renderer:not([data-download-added]),
             ytd-grid-video-renderer:not([data-download-added]),
-            ytd-rich-item-renderer:not([data-download-added]),
-            ytd-movie-renderer:not([data-download-added]),
-            ytd-playlist-video-renderer:not([data-download-added])
+            ytd-rich-item-renderer:not([data-download-added]):not(:has(ytm-shorts-lockup-view-model)),
+            ytd-movie-renderer:not([data-download-added])
         `);
 
-        console.log(`找到 ${videoCards.length} 个视频卡片`);
+        console.log(`找到 ${videoCards.length} 个普通视频卡片`);
 
         videoCards.forEach((card, index) => {
             try {
                 card.setAttribute('data-download-added', 'true');
 
-                const linkElement = card.querySelector('a#video-title-link') ||
-                                   card.querySelector('a[href*="/watch?v="]') ||
-                                   card.querySelector('#video-title') ||
-                                   card.querySelector('h3 a') ||
-                                   card.querySelector('a#thumbnail');
-
-                if (!linkElement) {
-                    console.log(`卡片 ${index} 未找到链接元素`);
-                    return;
-                }
-
-                let videoUrl = linkElement.href;
+                const videoUrl = extractVideoUrl(card);
                 if (!videoUrl) {
-                    const href = linkElement.getAttribute('href');
-                    if (href && href.startsWith('/watch?v=')) {
-                        videoUrl = 'https://www.youtube.com' + href;
-                    } else {
-                        return;
-                    }
-                }
-
-                if (!videoUrl.includes('/watch?v=')) {
+                    console.log(`卡片 ${index} 未找到有效链接`);
                     return;
                 }
 
@@ -234,12 +446,7 @@
                 btnContainer.className = 'yt-download-btns';
 
                 // 创建音频下载按钮
-                const audioBtn = document.createElement('button');
-                audioBtn.className = 'yt-download-btn yt-audio-btn';
-                audioBtn.textContent = '🎵';
-                audioBtn.title = '下载音频 (MP3)';
-                audioBtn.type = 'button';
-
+                const audioBtn = createDownloadButton('yt-download-btn', '🎵', '下载音频 (MP3)', 'yt-audio-btn');
                 audioBtn.addEventListener('click', function(e) {
                     e.preventDefault();
                     e.stopPropagation();
@@ -248,12 +455,7 @@
                 }, true);
 
                 // 创建视频下载按钮
-                const videoBtn = document.createElement('button');
-                videoBtn.className = 'yt-download-btn';
-                videoBtn.textContent = '🎬';
-                videoBtn.title = '下载视频';
-                videoBtn.type = 'button';
-
+                const videoBtn = createDownloadButton('yt-download-btn', '🎬', '下载视频');
                 videoBtn.addEventListener('click', function(e) {
                     e.preventDefault();
                     e.stopPropagation();
@@ -267,9 +469,247 @@
                 thumbnailContainer.style.position = 'relative';
                 thumbnailContainer.appendChild(btnContainer);
 
-                console.log(`已为卡片 ${index} 添加下载按钮`);
+                console.log(`已为普通卡片 ${index} 添加下载按钮`);
             } catch (error) {
-                console.error(`处理卡片 ${index} 时出错:`, error);
+                console.error(`处理普通卡片 ${index} 时出错:`, error);
+            }
+        });
+    }
+
+    // 为短视频添加下载按钮 - 优化版
+    function addButtonsToShorts() {
+        // 多种选择器确保能找到所有短视频卡片
+        const shortsSelectors = [
+            'ytd-rich-item-renderer:has(ytm-shorts-lockup-view-model):not([data-download-added])',
+            'ytm-shorts-lockup-view-model:not([data-download-added])',
+            'ytd-rich-item-renderer[is-slim-media]:not([data-download-added])',
+            'ytd-rich-item-renderer:has(a[href*="/shorts/"]):not([data-download-added])'
+        ];
+
+        let shortsCards = [];
+        shortsSelectors.forEach(selector => {
+            try {
+                const cards = document.querySelectorAll(selector);
+                cards.forEach(card => {
+                    if (!shortsCards.includes(card)) {
+                        shortsCards.push(card);
+                    }
+                });
+            } catch (e) {
+                // 忽略选择器错误
+            }
+        });
+
+        console.log(`找到 ${shortsCards.length} 个短视频卡片`);
+
+        shortsCards.forEach((card, index) => {
+            try {
+                // 防止重复添加
+                if (card.hasAttribute('data-download-added')) {
+                    return;
+                }
+                card.setAttribute('data-download-added', 'true');
+
+                // 多种方式查找短视频链接
+                const linkElement = card.querySelector('a[href*="/shorts/"]') ||
+                                   card.querySelector('.shortsLockupViewModelHostEndpoint') ||
+                                   card.querySelector('ytm-shorts-lockup-view-model a') ||
+                                   card.querySelector('a.reel-item-endpoint');
+
+                if (!linkElement) {
+                    console.log(`短视频卡片 ${index} 未找到链接元素`);
+                    return;
+                }
+
+                let videoUrl = linkElement.href;
+                if (!videoUrl) {
+                    const href = linkElement.getAttribute('href');
+                    if (href && href.includes('/shorts/')) {
+                        videoUrl = 'https://www.youtube.com' + href;
+                    }
+                }
+
+                if (!videoUrl || !videoUrl.includes('/shorts/')) {
+                    console.log(`短视频卡片 ${index} 未找到有效短视频链接:`, videoUrl);
+                    return;
+                }
+
+                // 转换为watch URL
+                const videoId = videoUrl.split('/shorts/')[1].split('?')[0];
+                const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+                // 检查是否已经有下载按钮
+                if (card.querySelector('.yt-shorts-btns')) {
+                    console.log(`短视频卡片 ${index} 已有下载按钮`);
+                    return;
+                }
+
+                // 创建按钮容器 - 直接添加到卡片外层容器
+                const btnContainer = document.createElement('div');
+                btnContainer.className = 'yt-shorts-btns';
+
+                // 创建音频下载按钮
+                const audioBtn = createDownloadButton('yt-shorts-btn', '♪', '下载音频 (MP3)', 'yt-shorts-audio-btn');
+                audioBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    downloadMedia(watchUrl, 'audio');
+                }, true);
+
+                // 创建视频下载按钮
+                const videoBtn = createDownloadButton('yt-shorts-btn', '▼', '下载视频', 'yt-shorts-video-btn');
+                videoBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    showQualityMenu(watchUrl);
+                }, true);
+
+                btnContainer.appendChild(audioBtn);
+                btnContainer.appendChild(videoBtn);
+
+                // 确保卡片容器是相对定位，然后添加按钮到外层
+                card.style.position = 'relative';
+                card.style.overflow = 'visible'; // 确保按钮不被裁剪
+                card.appendChild(btnContainer);
+
+                console.log(`已为短视频卡片 ${index} 添加下载按钮，URL: ${watchUrl}`);
+            } catch (error) {
+                console.error(`处理短视频卡片 ${index} 时出错:`, error);
+            }
+        });
+    }
+
+    // 为短视频播放器添加下载按钮
+    function addButtonsToShortsPlayer() {
+        // 检查是否在短视频播放页面
+        if (!window.location.pathname.includes('/shorts/')) {
+            return;
+        }
+
+        // 避免重复添加
+        if (document.getElementById('yt-shorts-player-download-buttons')) {
+            return;
+        }
+
+        // 查找短视频播放器
+        const shortsPlayer = document.querySelector('#shorts-player') ||
+                            document.querySelector('.html5-video-player') ||
+                            document.querySelector('ytd-shorts-player') ||
+                            document.querySelector('#player-container');
+
+        if (!shortsPlayer) {
+            console.log('未找到短视频播放器');
+            return;
+        }
+
+        // 从URL获取视频ID
+        const videoId = window.location.pathname.split('/shorts/')[1];
+        if (!videoId) {
+            console.log('无法从URL提取视频ID');
+            return;
+        }
+
+        const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+        // 创建按钮容器
+        const buttonContainer = document.createElement('div');
+        buttonContainer.id = 'yt-shorts-player-download-buttons';
+        buttonContainer.className = 'yt-shorts-player-btns';
+
+        // 创建下载音频按钮
+        const audioBtn = document.createElement('button');
+        audioBtn.className = 'yt-shorts-player-btn yt-shorts-player-audio-btn';
+        audioBtn.textContent = '🎵 音频';
+        audioBtn.type = 'button';
+
+        audioBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            downloadMedia(videoUrl, 'audio');
+        }, true);
+
+        // 创建下载视频按钮
+        const videoBtn = document.createElement('button');
+        videoBtn.className = 'yt-shorts-player-btn yt-shorts-player-video-btn';
+        videoBtn.textContent = '🎬 视频';
+        videoBtn.type = 'button';
+
+        videoBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            showQualityMenu(videoUrl);
+        }, true);
+
+        buttonContainer.appendChild(audioBtn);
+        buttonContainer.appendChild(videoBtn);
+
+        // 直接添加到body以确保显示
+        document.body.appendChild(buttonContainer);
+
+        console.log('已为短视频播放器添加下载按钮');
+    }
+
+    // 为播放列表视频添加下载按钮
+    function addButtonsToPlaylistVideos() {
+        const playlistVideos = document.querySelectorAll(`
+            ytd-playlist-panel-video-renderer:not([data-download-added])
+        `);
+
+        console.log(`找到 ${playlistVideos.length} 个播放列表视频`);
+
+        playlistVideos.forEach((video, index) => {
+            try {
+                video.setAttribute('data-download-added', 'true');
+
+                const videoUrl = extractVideoUrl(video);
+                if (!videoUrl) {
+                    console.log(`播放列表视频 ${index} 未找到有效链接`);
+                    return;
+                }
+
+                // 查找缩略图容器
+                const thumbnailContainer = video.querySelector('#thumbnail-container') ||
+                                         video.querySelector('ytd-thumbnail') ||
+                                         video.querySelector('#thumbnail');
+
+                if (!thumbnailContainer) {
+                    console.log(`播放列表视频 ${index} 未找到缩略图容器`);
+                    return;
+                }
+
+                // 创建按钮容器
+                const btnContainer = document.createElement('div');
+                btnContainer.className = 'yt-playlist-btns';
+
+                // 创建音频下载按钮
+                const audioBtn = createDownloadButton('yt-playlist-btn', '🎵', '下载音频 (MP3)', 'yt-playlist-audio-btn');
+                audioBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    downloadMedia(videoUrl, 'audio');
+                }, true);
+
+                // 创建视频下载按钮
+                const videoBtn = createDownloadButton('yt-playlist-btn', '🎬', '下载视频');
+                videoBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    showQualityMenu(videoUrl);
+                }, true);
+
+                btnContainer.appendChild(audioBtn);
+                btnContainer.appendChild(videoBtn);
+
+                thumbnailContainer.style.position = 'relative';
+                thumbnailContainer.appendChild(btnContainer);
+
+                console.log(`已为播放列表视频 ${index} 添加下载按钮`);
+            } catch (error) {
+                console.error(`处理播放列表视频 ${index} 时出错:`, error);
             }
         });
     }
@@ -308,7 +748,7 @@
             downloadMedia(videoUrl, 'audio');
         }, true);
 
-        // 创建下载视频按钮
+        // 创建视频下载按钮
         const videoBtn = document.createElement('button');
         videoBtn.className = 'yt-player-btn';
         videoBtn.textContent = '🎬 视频';
@@ -380,7 +820,7 @@
             width: 100% !important;
             height: 100% !important;
             background: rgba(0, 0, 0, 0.5) !important;
-            z-index: 99998 !important;
+            z-index: 9999998 !important;
         `;
 
         // 创建质量选择菜单
@@ -395,7 +835,7 @@
             border: 2px solid #ccc !important;
             border-radius: 12px !important;
             padding: 24px !important;
-            z-index: 99999 !important;
+            z-index: 9999999 !important;
             box-shadow: 0 8px 32px rgba(0,0,0,0.3) !important;
             min-width: 250px !important;
             max-width: 90vw !important;
@@ -502,7 +942,7 @@
             background: ${type === 'success' ? '#4CAF50' : type === 'error' ? '#f44336' : '#2196F3'} !important;
             color: white !important;
             border-radius: 6px !important;
-            z-index: 999999 !important;
+            z-index: 9999999 !important;
             max-width: 400px !important;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
             font-size: 14px !important;
@@ -525,6 +965,11 @@
             oldPlayerButtons.remove();
         }
 
+        const oldShortsPlayerButtons = document.getElementById('yt-shorts-player-download-buttons');
+        if (oldShortsPlayerButtons) {
+            oldShortsPlayerButtons.remove();
+        }
+
         document.querySelectorAll('[data-download-added]').forEach(card => {
             card.removeAttribute('data-download-added');
         });
@@ -543,21 +988,35 @@
         };
     }
 
+    // 添加所有类型的按钮
+    function addAllButtons() {
+        addButtonsToVideoCards();
+        addButtonsToShorts();
+        addButtonsToPlaylistVideos();
+    }
+
     // 初始化
     function init() {
         console.log('YouTube下载助手初始化, 当前URL:', window.location.href);
         injectStyles();
 
         setTimeout(() => {
-            addButtonsToVideoCards();
+            addAllButtons();
             if (window.location.pathname.includes('/watch')) {
                 addButtonsToVideoPlayer();
+            } else if (window.location.pathname.includes('/shorts/')) {
+                addButtonsToShortsPlayer();
             }
         }, 1000);
     }
 
     // 防抖的添加按钮函数
-    const debouncedAddButtons = debounce(addButtonsToVideoCards, 500);
+    const debouncedAddButtons = debounce(() => {
+        addAllButtons();
+        if (window.location.pathname.includes('/shorts/')) {
+            addButtonsToShortsPlayer();
+        }
+    }, 300);
 
     // 页面变化监听
     let lastUrl = location.href;
@@ -593,7 +1052,9 @@
     }
 
     // 定期检查（降低频率）
-    setInterval(debouncedAddButtons, 10000);
+    setInterval(() => {
+        debouncedAddButtons();
+    }, 8000);
 
     console.log('YouTube视频下载助手已加载');
 })();
