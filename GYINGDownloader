@@ -1,0 +1,701 @@
+// ==UserScript==
+// @name         GYING.NET M3U8 Video Downloader
+// @namespace    http://tampermonkey.net/
+// @version      3.0
+// @description  M3U8 video downloader specifically for gying.net with collapsible interface
+// @author       You
+// @match        *://www.gying.net/*
+// @match        *://gying.net/*
+// @grant        none
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    const SERVICE_URL = 'http://localhost:8899';
+    let detectedVideos = new Map();
+    let detectedM3U8s = new Map();
+    let isServiceAvailable = false;
+    let videoCounter = 0;
+    let m3u8Counter = 0;
+    let isPanelVisible = false;
+
+    // 检查服务可用性
+    async function checkServiceAvailability() {
+        try {
+            const response = await fetch(`${SERVICE_URL}/health`);
+            const data = await response.json();
+            isServiceAvailable = data.status === 'ok';
+            console.log('📡 服务状态:', data);
+            return isServiceAvailable;
+        } catch (error) {
+            isServiceAvailable = false;
+            console.error('❌ 服务不可用:', error);
+            return false;
+        }
+    }
+
+    // 智能提取视频标题
+    function extractVideoTitle() {
+        const titleSelectors = [
+            'h1',
+            '.title',
+            '[class*="title"]',
+            'meta[property="og:title"]',
+            'meta[name="title"]'
+        ];
+
+        for (const selector of titleSelectors) {
+            try {
+                const element = document.querySelector(selector);
+                if (element) {
+                    let title = element.textContent || element.getAttribute('content');
+                    if (title && title.trim()) {
+                        title = cleanTitle(title.trim());
+                        if (title && title.length > 3) {
+                            console.log(`🎯 从选择器 ${selector} 提取到标题: ${title}`);
+                            return title;
+                        }
+                    }
+                }
+            } catch (e) {
+                // 继续尝试下一个选择器
+            }
+        }
+
+        // 从URL路径提取
+        const pathMatch = window.location.pathname.match(/\/([^\/]+)\/(\d+)/);
+        if (pathMatch) {
+            return `${pathMatch[1]} 第${pathMatch[2]}集`;
+        }
+
+        // 最后的备选方案
+        const pageTitle = document.title;
+        if (pageTitle && pageTitle.trim()) {
+            const cleanedTitle = cleanTitle(pageTitle);
+            if (cleanedTitle && cleanedTitle.length > 3) {
+                return cleanedTitle;
+            }
+        }
+
+        return `GYING视频_${new Date().toISOString().slice(0, 16).replace(/[-:]/g, '')}`;
+    }
+
+    // 清理标题文本
+    function cleanTitle(title) {
+        if (!title) return '';
+
+        // 移除HTML标签
+        title = title.replace(/<[^>]*>/g, '');
+
+        // 移除常见的无用文本
+        const removePatterns = [
+            /播放速度.*/,
+            /画面比例.*/,
+            /Player version.*/,
+            /Video url.*/,
+            /Video time.*/,
+            /Video duration.*/,
+            /blob:https?.*/,
+            /\d{4,}:\d{2}/g,
+            /\[x\]/g,
+            /选集.*$/,
+            /正常.*$/,
+            /在线观看.*/,
+            /-.*影视$/
+        ];
+
+        for (const pattern of removePatterns) {
+            title = title.replace(pattern, '');
+        }
+
+        // 清理多余的空白字符
+        title = title.replace(/\s+/g, ' ').trim();
+
+        // 如果标题太长，取前面部分
+        if (title.length > 50) {
+            const breakPoints = [' - ', ' | ', ' 第', '第'];
+            for (const bp of breakPoints) {
+                const index = title.indexOf(bp);
+                if (index > 10 && index < 50) {
+                    title = title.substring(0, index);
+                    break;
+                }
+            }
+
+            if (title.length > 50) {
+                title = title.substring(0, 50);
+            }
+        }
+
+        return title.trim();
+    }
+
+    // 检查是否为M3U8 URL
+    function isM3U8Url(url) {
+        return url && (
+            url.toLowerCase().includes('.m3u8') ||
+            url.toLowerCase().includes('manifest') ||
+            url.toLowerCase().includes('playlist.m3u8') ||
+            url.toLowerCase().includes('index.m3u8')
+        );
+    }
+
+    // 创建悬浮按钮
+    function createFloatingButton() {
+        const button = document.createElement('div');
+        button.id = 'video-downloader-btn';
+        button.innerHTML = '🎬';
+        button.title = 'M3U8视频下载器';
+        button.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 50%;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            z-index: 10001;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            user-select: none;
+        `;
+
+        // 添加状态指示器
+        const indicator = document.createElement('div');
+        indicator.id = 'service-indicator';
+        indicator.style.cssText = `
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: ${isServiceAvailable ? '#10b981' : '#ef4444'};
+            border: 2px solid white;
+            animation: ${isServiceAvailable ? 'none' : 'pulse 2s infinite'};
+        `;
+
+        button.appendChild(indicator);
+
+        // 添加悬停效果
+        button.addEventListener('mouseenter', () => {
+            button.style.transform = 'scale(1.1)';
+            button.style.boxShadow = '0 6px 20px rgba(0,0,0,0.4)';
+        });
+
+        button.addEventListener('mouseleave', () => {
+            button.style.transform = 'scale(1)';
+            button.style.boxShadow = '0 4px 15px rgba(0,0,0,0.3)';
+        });
+
+        // 点击事件
+        button.addEventListener('click', togglePanel);
+
+        document.body.appendChild(button);
+
+        // 添加CSS动画
+        if (!document.getElementById('downloader-styles')) {
+            const style = document.createElement('style');
+            style.id = 'downloader-styles';
+            style.textContent = `
+                @keyframes pulse {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.5; }
+                }
+                @keyframes fadeIn {
+                    from { opacity: 0; transform: translateY(-10px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                @keyframes slideIn {
+                    from { transform: translateX(100%); }
+                    to { transform: translateX(0); }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+    }
+
+    // 创建控制面板
+    function createControlPanel() {
+        if (document.getElementById('video-downloader-panel')) return;
+
+        const panel = document.createElement('div');
+        panel.id = 'video-downloader-panel';
+        panel.style.cssText = `
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            width: 400px;
+            max-height: 70vh;
+            background: linear-gradient(145deg, #1e3c72, #2a5298);
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+            z-index: 10000;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 13px;
+            color: white;
+            overflow: hidden;
+            backdrop-filter: blur(10px);
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            animation: slideIn 0.3s ease forwards;
+            display: ${isPanelVisible ? 'block' : 'none'};
+        `;
+
+        const header = document.createElement('div');
+        header.style.cssText = `
+            background: rgba(255,255,255,0.1);
+            padding: 15px;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 600;
+        `;
+        header.innerHTML = `
+            <span>🎬 GYING视频下载器</span>
+            <button id="close-panel" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 18px; transition: all 0.2s ease;">×</button>
+        `;
+
+        const content = document.createElement('div');
+        content.id = 'panel-content';
+        content.style.cssText = `
+            padding: 15px;
+            max-height: 500px;
+            overflow-y: auto;
+        `;
+
+        panel.appendChild(header);
+        panel.appendChild(content);
+        document.body.appendChild(panel);
+
+        // 关闭按钮事件
+        document.getElementById('close-panel').onclick = () => {
+            togglePanel();
+        };
+
+        // 关闭按钮悬停效果
+        const closeBtn = document.getElementById('close-panel');
+        closeBtn.addEventListener('mouseenter', () => {
+            closeBtn.style.background = 'rgba(239, 68, 68, 0.8)';
+        });
+        closeBtn.addEventListener('mouseleave', () => {
+            closeBtn.style.background = 'rgba(255,255,255,0.2)';
+        });
+
+        updatePanel();
+    }
+
+    // 切换面板显示/隐藏
+    function togglePanel() {
+        isPanelVisible = !isPanelVisible;
+        const panel = document.getElementById('video-downloader-panel');
+
+        if (isPanelVisible) {
+            if (!panel) {
+                createControlPanel();
+            } else {
+                panel.style.display = 'block';
+                panel.style.transform = 'translateX(0)';
+                updatePanel(); // 更新内容
+            }
+        } else {
+            if (panel) {
+                panel.style.transform = 'translateX(100%)';
+                setTimeout(() => {
+                    panel.style.display = 'none';
+                }, 300);
+            }
+        }
+
+        // 更新按钮状态
+        const button = document.getElementById('video-downloader-btn');
+        if (button) {
+            button.style.background = isPanelVisible
+                ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+                : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+        }
+    }
+
+    // 更新服务状态指示器
+    function updateServiceIndicator() {
+        const indicator = document.getElementById('service-indicator');
+        if (indicator) {
+            indicator.style.background = isServiceAvailable ? '#10b981' : '#ef4444';
+            indicator.style.animation = isServiceAvailable ? 'none' : 'pulse 2s infinite';
+        }
+    }
+
+    // 更新面板内容
+    function updatePanel() {
+        const content = document.getElementById('panel-content');
+        if (!content) return;
+
+        let html = '';
+
+        // 服务状态
+        html += `
+            <div style="margin-bottom: 15px; padding: 12px; background: rgba(255,255,255,0.1); border-radius: 10px;">
+                <div style="font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 16px;">${isServiceAvailable ? '✅' : '❌'}</span>
+                    <span>服务状态</span>
+                </div>
+                <div style="color: ${isServiceAvailable ? '#4ade80' : '#f87171'}; font-size: 12px;">
+                    ${isServiceAvailable ? '🟢 后端服务正常' : '🔴 后端服务离线'}
+                </div>
+                <div style="font-size: 11px; color: #d1d5db; margin-top: 5px;">
+                    📺 当前页面: ${cleanTitle(document.title) || 'GYING影视'}
+                </div>
+            </div>
+        `;
+
+        // M3U8 流检测
+        if (detectedM3U8s.size > 0) {
+            html += `
+                <div style="margin-bottom: 15px;">
+                    <div style="font-weight: 600; margin-bottom: 12px; color: #fbbf24; display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 16px;">🎬</span>
+                        <span>检测到M3U8流 (${detectedM3U8s.size})</span>
+                    </div>
+            `;
+
+            detectedM3U8s.forEach((m3u8, id) => {
+                const shortUrl = m3u8.url.length > 50 ? m3u8.url.substring(0, 50) + '...' : m3u8.url;
+                html += `
+                    <div style="background: rgba(251, 191, 36, 0.15); border: 1px solid rgba(251, 191, 36, 0.4); margin: 10px 0; padding: 12px; border-radius: 10px; transition: all 0.2s ease;">
+                        <div style="font-size: 12px; color: #fbbf24; margin-bottom: 6px; font-weight: 500;">📻 M3U8-${id}</div>
+                        <div style="word-break: break-all; margin-bottom: 10px; font-size: 11px; color: #e5e7eb; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 5px;">${shortUrl}</div>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button onclick="downloadM3U8('${id}')" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 500; transition: all 0.2s ease;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">📥 下载视频</button>
+                            <button onclick="copyToClipboard('${m3u8.url}')" style="background: #6b7280; color: white; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 11px; transition: all 0.2s ease;" onmouseover="this.style.background='#4b5563'" onmouseout="this.style.background='#6b7280'">📋 复制链接</button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += '</div>';
+        }
+
+        // 手动输入下载
+        html += `
+            <div style="margin-bottom: 15px;">
+                <div style="font-weight: 600; margin-bottom: 12px; color: #a78bfa; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 16px;">🌐</span>
+                    <span>手动下载</span>
+                </div>
+                <div style="background: rgba(167, 139, 250, 0.15); border: 1px solid rgba(167, 139, 250, 0.4); padding: 12px; border-radius: 10px;">
+                    <input type="text" id="custom-url" placeholder="粘贴M3U8链接或视频页面URL..." style="width: 100%; padding: 10px; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; background: rgba(255,255,255,0.1); color: white; font-size: 12px; margin-bottom: 10px; box-sizing: border-box;" />
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button onclick="downloadCustomUrl('video')" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 500; transition: all 0.2s ease;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">📥 下载视频</button>
+                        <button onclick="downloadCustomUrl('audio')" style="background: linear-gradient(135deg, #10b981, #059669); color: white; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 500; transition: all 0.2s ease;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">🎵 下载音频</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // 统计信息
+        html += `
+            <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; font-size: 11px; color: #9ca3af; text-align: center;">
+                📊 本次会话: M3U8(${detectedM3U8s.size}) | 视频(${detectedVideos.size})
+            </div>
+        `;
+
+        if (detectedM3U8s.size === 0) {
+            html += `
+                <div style="text-align: center; color: #9ca3af; font-style: italic; padding: 30px 20px; background: rgba(255,255,255,0.05); border-radius: 10px; margin: 15px 0;">
+                    <div style="font-size: 24px; margin-bottom: 10px;">🔍</div>
+                    <div>等待检测M3U8流...</div>
+                    <div style="font-size: 10px; margin-top: 5px;">播放视频后自动检测</div>
+                </div>
+            `;
+        }
+
+        content.innerHTML = html;
+    }
+
+    // 下载M3U8
+    window.downloadM3U8 = async function(m3u8Id) {
+        const m3u8 = detectedM3U8s.get(m3u8Id);
+        if (!m3u8) return;
+
+        if (!isServiceAvailable) {
+            showNotification('❌ 下载服务不可用', '请确保本地服务运行在 http://localhost:8899', 'error');
+            return;
+        }
+
+        try {
+            const title = extractVideoTitle();
+            console.log('🎯 提取的标题:', title);
+
+            showNotification('🚀 开始下载', `正在下载: ${title}`, 'info');
+
+            const response = await fetch(`${SERVICE_URL}/download-m3u8`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    m3u8_url: m3u8.url,
+                    page_url: window.location.href,
+                    title: title,
+                    headers: m3u8.headers || {}
+                })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                showNotification('✅ 下载已启动', `文件将保存到: ${result.download_path}`, 'success');
+            } else {
+                showNotification('❌ 下载失败', result.error, 'error');
+            }
+        } catch (error) {
+            console.error('下载M3U8错误:', error);
+            showNotification('❌ 下载失败', error.message, 'error');
+        }
+    };
+
+    // 下载自定义URL
+    window.downloadCustomUrl = async function(type) {
+        if (!isServiceAvailable) {
+            showNotification('❌ 下载服务不可用', '请确保本地服务运行在 http://localhost:8899', 'error');
+            return;
+        }
+
+        const customUrl = document.getElementById('custom-url').value.trim();
+        if (!customUrl) {
+            showNotification('⚠️ 请输入URL', '请先输入M3U8链接或视频页面URL', 'warning');
+            return;
+        }
+
+        try {
+            let endpoint, payload;
+
+            if (isM3U8Url(customUrl)) {
+                // M3U8链接
+                endpoint = '/download-m3u8';
+                payload = {
+                    m3u8_url: customUrl,
+                    page_url: window.location.href,
+                    title: extractVideoTitle(),
+                    headers: {}
+                };
+            } else {
+                // 普通视频URL
+                endpoint = '/download';
+                payload = {
+                    url: customUrl,
+                    type: type,
+                    quality: 'best'
+                };
+            }
+
+            showNotification('🚀 开始下载', `正在处理: ${type === 'video' ? '视频' : '音频'}`, 'info');
+
+            const response = await fetch(`${SERVICE_URL}${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                showNotification('✅ 下载已启动', `文件将保存到: ${result.download_path}`, 'success');
+                document.getElementById('custom-url').value = ''; // 清空输入框
+            } else {
+                showNotification('❌ 下载失败', result.error, 'error');
+            }
+        } catch (error) {
+            console.error('下载失败:', error);
+            showNotification('❌ 下载失败', error.message, 'error');
+        }
+    };
+
+    // 复制到剪贴板
+    window.copyToClipboard = function(text) {
+        navigator.clipboard.writeText(text).then(() => {
+            showNotification('📋 已复制', '链接已复制到剪贴板', 'success');
+        }).catch(() => {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            showNotification('📋 已复制', '链接已复制到剪贴板', 'success');
+        });
+    };
+
+    // 显示通知
+    function showNotification(title, message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: ${type === 'success' ? 'linear-gradient(135deg, #10b981, #059669)' :
+                         type === 'error' ? 'linear-gradient(135deg, #ef4444, #dc2626)' :
+                         type === 'warning' ? 'linear-gradient(135deg, #f59e0b, #d97706)' :
+                         'linear-gradient(135deg, #3b82f6, #2563eb)'};
+            color: white;
+            padding: 12px 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            z-index: 10002;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 13px;
+            max-width: 400px;
+            animation: fadeIn 0.3s ease;
+        `;
+
+        notification.innerHTML = `
+            <div style="font-weight: 600; margin-bottom: 4px;">${title}</div>
+            <div style="font-size: 12px; opacity: 0.9;">${message}</div>
+        `;
+
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            notification.style.transform = 'translateX(-50%) translateY(-20px)';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }, 3000);
+    }
+
+    // 拦截网络请求
+    function interceptNetworkRequests() {
+        const originalFetch = window.fetch;
+        window.fetch = function(...args) {
+            const url = args[0];
+            if (typeof url === 'string') {
+                checkAndAddUrl(url);
+            }
+            return originalFetch.apply(this, args);
+        };
+
+        const originalOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+            if (typeof url === 'string') {
+                checkAndAddUrl(url);
+            }
+            return originalOpen.call(this, method, url, ...rest);
+        };
+    }
+
+    // 检查并添加URL
+    function checkAndAddUrl(url) {
+        if (!url || url.startsWith('data:') || url.startsWith('blob:')) return;
+
+        try {
+            const fullUrl = new URL(url, window.location.href).href;
+
+            if (isM3U8Url(fullUrl)) {
+                const id = `m3u8_${++m3u8Counter}`;
+                if (!Array.from(detectedM3U8s.values()).some(m => m.url === fullUrl)) {
+                    detectedM3U8s.set(id, {
+                        url: fullUrl,
+                        title: extractVideoTitle(),
+                        detected: new Date().toLocaleTimeString()
+                    });
+                    console.log('🎬 检测到 M3U8:', fullUrl);
+                    updatePanel();
+
+                    // 如果面板未显示，显示通知
+                    if (!isPanelVisible) {
+                        showNotification('🎬 检测到视频流', `发现M3U8流，点击右上角按钮查看`, 'info');
+                    }
+                }
+            }
+        } catch (e) {
+            // 忽略无效URL
+        }
+    }
+
+    // 扫描页面现有元素
+    function scanExistingElements() {
+        document.querySelectorAll('video').forEach(video => {
+            if (video.src) checkAndAddUrl(video.src);
+            video.querySelectorAll('source').forEach(source => {
+                if (source.src) checkAndAddUrl(source.src);
+            });
+        });
+    }
+
+    // 观察DOM变化
+    function observeDOM() {
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                mutation.addedNodes.forEach((node) => {
+                    if (node.nodeType === Node.ELEMENT_NODE) {
+                        if (node.tagName === 'VIDEO') {
+                            if (node.src) checkAndAddUrl(node.src);
+                        }
+                        node.querySelectorAll && node.querySelectorAll('video').forEach(video => {
+                            if (video.src) checkAndAddUrl(video.src);
+                        });
+                    }
+                });
+            });
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    }
+
+    // 初始化
+    async function init() {
+        console.log('🎬 GYING视频下载器启动中...');
+
+        // 检查服务状态
+        await checkServiceAvailability();
+
+        // 创建悬浮按钮
+        createFloatingButton();
+
+        // 拦截网络请求
+        interceptNetworkRequests();
+
+        // 扫描现有元素
+        scanExistingElements();
+
+        // 观察DOM变化
+        observeDOM();
+
+        // 定期重新扫描
+        setInterval(() => {
+            scanExistingElements();
+        }, 3000);
+
+        // 定期检查服务状态
+        setInterval(async () => {
+            const wasAvailable = isServiceAvailable;
+            await checkServiceAvailability();
+            if (wasAvailable !== isServiceAvailable) {
+                updateServiceIndicator();
+                updatePanel();
+            }
+        }, 10000);
+
+        console.log('✅ GYING视频下载器初始化完成');
+    }
+
+    // 页面加载完成后启动
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
