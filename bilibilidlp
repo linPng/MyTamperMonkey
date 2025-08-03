@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         Bilibili视频下载助手
 // @namespace    http://tampermonkey.net/
-// @version      1.0
-// @description  在Bilibili视频页面和首页添加下载按钮
+// @version      1.5
+// @description  在Bilibili视频页面、首页和关注页面添加下载按钮
 // @author       You
 // @match        https://www.bilibili.com/*
+// @match        https://t.bilibili.com/*
+// @match        https://search.bilibili.com/*
 // @connect      localhost
 // @grant        GM_xmlhttpRequest
 // ==/UserScript==
@@ -16,29 +18,81 @@
 
     // 为首页视频卡片添加下载按钮
     function addButtonsToVideoCards() {
-        const videoCards = document.querySelectorAll('.bili-video-card, .video-card, .card-box, .bili-live-card');
+        // 更新选择器，包含关注页面的动态视频卡片
+        const videoCards = document.querySelectorAll(
+            '.bili-video-card, .video-card, .card-box, .bili-live-card, ' +
+            '.bili-dyn-card-video, .suit-video-card, .bili-dyn-content__orig__major, ' +
+            '.bili-dyn-content__orig, .bili-dyn-list__item'
+        );
 
         videoCards.forEach(card => {
             // 避免重复添加
             if (card.querySelector('.custom-download-btns')) return;
 
-            // 获取视频链接
-            const linkElement = card.querySelector('a[href*="/video/"]');
-            if (!linkElement) return;
+            // 获取视频链接 - 针对不同页面类型的选择器
+            let linkElement = null;
+            let videoUrl = '';
 
-            const videoUrl = linkElement.href;
+            // 首先尝试常规的视频链接选择器
+            linkElement = card.querySelector('a[href*="/video/"]');
+
+            // 如果没找到，尝试关注页面的特殊结构
+            if (!linkElement) {
+                linkElement = card.querySelector('.bili-dyn-card-video');
+                if (linkElement && linkElement.href && linkElement.href.includes('/video/')) {
+                    // 找到了关注页面的视频链接
+                } else {
+                    linkElement = null;
+                }
+            }
+
+            // 如果还是没找到，尝试在子元素中查找
+            if (!linkElement) {
+                const parentContainer = card.closest('.bili-dyn-list__item') || card.closest('.bili-dyn-item');
+                if (parentContainer) {
+                    linkElement = parentContainer.querySelector('a[href*="/video/"], .bili-dyn-card-video[href*="/video/"]');
+                }
+            }
+
+            if (!linkElement || !linkElement.href) {
+                return;
+            }
+
+            videoUrl = linkElement.href;
+            // 处理相对链接
+            if (videoUrl.startsWith('//')) {
+                videoUrl = 'https:' + videoUrl;
+            } else if (videoUrl.startsWith('/')) {
+                videoUrl = 'https://www.bilibili.com' + videoUrl;
+            }
+
+            // 找到合适的容器来添加按钮
+            let targetContainer = card;
+
+            // 对于关注页面，寻找视频封面容器
+            const coverElement = card.querySelector('.bili-dyn-card-video__cover') ||
+                                card.querySelector('.bili-dyn-card-video__header') ||
+                                card.querySelector('.b-img') ||
+                                linkElement;
+
+            if (coverElement) {
+                targetContainer = coverElement;
+            }
 
             // 创建按钮容器
             const btnContainer = document.createElement('div');
             btnContainer.className = 'custom-download-btns';
             btnContainer.style.cssText = `
                 position: absolute !important;
-                top: 5px !important;
-                left: 5px !important;
+                top: 8px !important;
+                left: 8px !important;
                 z-index: 99999 !important;
                 display: flex !important;
-                gap: 3px !important;
+                gap: 4px !important;
                 pointer-events: auto !important;
+                background: rgba(0,0,0,0.1) !important;
+                padding: 2px !important;
+                border-radius: 6px !important;
             `;
 
             // 创建音频下载按钮
@@ -46,23 +100,23 @@
             audioBtn.innerHTML = '🎵';
             audioBtn.title = '下载音频';
             audioBtn.style.cssText = `
-                background: rgba(255, 102, 153, 0.9) !important;
+                background: rgba(255, 102, 153, 0.95) !important;
                 color: white !important;
                 border: none !important;
-                padding: 4px 6px !important;
-                border-radius: 3px !important;
+                padding: 6px 8px !important;
+                border-radius: 4px !important;
                 cursor: pointer !important;
                 font-size: 12px !important;
                 font-weight: bold !important;
-                min-width: 24px !important;
-                height: 24px !important;
+                min-width: 28px !important;
+                height: 28px !important;
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
                 pointer-events: auto !important;
-                position: relative !important;
-                z-index: 99999 !important;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.4) !important;
             `;
+
             audioBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -75,23 +129,23 @@
             videoBtn.innerHTML = '🎬';
             videoBtn.title = '下载视频';
             videoBtn.style.cssText = `
-                background: rgba(0, 161, 214, 0.9) !important;
+                background: rgba(0, 161, 214, 0.95) !important;
                 color: white !important;
                 border: none !important;
-                padding: 4px 6px !important;
-                border-radius: 3px !important;
+                padding: 6px 8px !important;
+                border-radius: 4px !important;
                 cursor: pointer !important;
                 font-size: 12px !important;
                 font-weight: bold !important;
-                min-width: 24px !important;
-                height: 24px !important;
+                min-width: 28px !important;
+                height: 28px !important;
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
                 pointer-events: auto !important;
-                position: relative !important;
-                z-index: 99999 !important;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.4) !important;
             `;
+
             videoBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -102,9 +156,9 @@
             btnContainer.appendChild(audioBtn);
             btnContainer.appendChild(videoBtn);
 
-            // 设置卡片为相对定位
-            card.style.position = 'relative';
-            card.appendChild(btnContainer);
+            // 设置容器为相对定位
+            targetContainer.style.position = 'relative';
+            targetContainer.appendChild(btnContainer);
         });
     }
 
@@ -152,6 +206,7 @@
             font-weight: bold !important;
             pointer-events: auto !important;
             z-index: 99999 !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3) !important;
         `;
         audioBtn.addEventListener('click', (e) => {
             e.preventDefault();
@@ -174,6 +229,7 @@
             font-weight: bold !important;
             pointer-events: auto !important;
             z-index: 99999 !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3) !important;
         `;
         videoBtn.addEventListener('click', (e) => {
             e.preventDefault();
@@ -190,17 +246,23 @@
         videoPlayer.appendChild(buttonContainer);
     }
 
-    function downloadMedia(url, type) {
+    function downloadMedia(url, type, quality = null) {
+        const requestData = {
+            url: url,
+            type: type
+        };
+
+        if (quality) {
+            requestData.quality = quality;
+        }
+
         GM_xmlhttpRequest({
             method: 'POST',
             url: `${API_BASE}/download`,
             headers: {
                 'Content-Type': 'application/json',
             },
-            data: JSON.stringify({
-                url: url,
-                type: type
-            }),
+            data: JSON.stringify(requestData),
             onload: function(response) {
                 try {
                     const result = JSON.parse(response.responseText);
@@ -297,57 +359,69 @@
         document.body.appendChild(menu);
     }
 
-    function downloadVideo(url, quality) {
-        GM_xmlhttpRequest({
-            method: 'POST',
-            url: `${API_BASE}/download`,
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            data: JSON.stringify({
-                url: url,
-                type: 'video',
-                quality: quality
-            }),
-            onload: function(response) {
-                try {
-                    const result = JSON.parse(response.responseText);
-                    if (result.success) {
-                        alert('视频下载任务已启动！保存路径：' + result.download_path);
-                    } else {
-                        alert('下载失败: ' + result.error);
-                    }
-                } catch (e) {
-                    alert('解析响应失败');
-                }
-            },
-            onerror: function() {
-                alert('连接服务器失败，请确保本地服务正在运行');
-            }
-        });
+    // 检测当前页面类型
+    function getCurrentPageType() {
+        const hostname = window.location.hostname;
+        const path = window.location.pathname;
+
+        if (path.includes('/video/')) {
+            return 'video';
+        } else if (hostname === 't.bilibili.com' || path.includes('/following') || path.includes('/t/')) {
+            return 'following';
+        } else if (path === '/' || path.includes('/index')) {
+            return 'home';
+        }
+        return 'other';
     }
 
     // 初始化和监听变化
     function init() {
         // 延迟执行以确保页面加载完成
         setTimeout(() => {
+            const pageType = getCurrentPageType();
+
+            console.log('Bilibili下载助手已加载，当前页面类型：', pageType);
+            console.log('当前URL：', window.location.href);
+
+            // 所有页面都尝试添加视频卡片按钮
             addButtonsToVideoCards();
-            if (window.location.pathname.includes('/video/')) {
+
+            // 视频播放页面添加播放器按钮
+            if (pageType === 'video') {
                 addButtonsToVideoPlayer();
             }
-        }, 1000);
+        }, 2000);
     }
 
     // 监听页面变化
     let lastUrl = location.href;
-    const observer = new MutationObserver(() => {
+    const observer = new MutationObserver((mutations) => {
         const url = location.href;
         if (url !== lastUrl) {
             lastUrl = url;
-            setTimeout(init, 1000);
+            console.log('页面URL变化，重新初始化');
+            // URL变化时重新初始化
+            setTimeout(init, 1500);
         } else {
-            // 检查是否有新的视频卡片
-            addButtonsToVideoCards();
+            // 页面内容变化时检查新的视频卡片
+            let shouldCheck = false;
+            mutations.forEach(mutation => {
+                if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                    for (let node of mutation.addedNodes) {
+                        if (node.nodeType === 1 && (
+                            node.classList?.contains('bili-dyn-list__item') ||
+                            node.querySelector?.('.bili-dyn-list__item') ||
+                            node.querySelector?.('a[href*="/video/"]')
+                        )) {
+                            shouldCheck = true;
+                            break;
+                        }
+                    }
+                }
+            });
+            if (shouldCheck) {
+                setTimeout(addButtonsToVideoCards, 1000);
+            }
         }
     });
 
@@ -359,6 +433,8 @@
     // 初始化
     init();
 
-    // 定期检查新增的视频卡片
-    setInterval(addButtonsToVideoCards, 2000);
+    // 定期检查新增的视频卡片（适用于动态加载的内容）
+    setInterval(() => {
+        addButtonsToVideoCards();
+    }, 5000);
 })();
